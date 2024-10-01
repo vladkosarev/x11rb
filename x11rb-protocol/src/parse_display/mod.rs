@@ -75,6 +75,9 @@ pub fn parse_display_with_file_exists_callback(
     if let Some(remaining) = dpy_name.strip_prefix("unix:") {
         return parse_display_direct_path(remaining, file_exists);
     }
+    if let Some(remaining) = dpy_name.strip_prefix("vsock:") {
+        return parse_display_vsock_path(remaining); // Add vsock-specific parsing logic here
+    }
 
     // Everything up to the last '/' is the protocol. This part is optional.
     let (protocol, remaining) = if let Some(pos) = dpy_name.rfind('/') {
@@ -139,6 +142,35 @@ fn parse_display_direct_path(
     Err(DisplayParsingError::MalformedValue(
         dpy_name.to_string().into(),
     ))
+}
+
+/// Specific handling for "vsock" connection strings.
+/// This assumes that the vsock string will have the form `vsock/:<display>.<screen>`.
+fn parse_display_vsock_path(dpy_name: &str) -> Result<ParsedDisplay, DisplayParsingError> {
+    // Handle the case of vsock/:<display>.<screen>
+    let malformed = || DisplayParsingError::MalformedValue(dpy_name.to_string().into());
+
+    // Strip the leading '/' if it's present
+    let remaining = dpy_name.strip_prefix('/').unwrap_or(dpy_name);
+
+    // The remaining part is display.screen. The display is required and the screen optional.
+    let (display, screen) = match remaining.find('.') {
+        Some(pos) => (&remaining[..pos], &remaining[pos + 1..]),
+        None => (remaining, "0"),
+    };
+
+    // Parse the display and screen number
+    let (display, screen) = (
+        display.parse().map_err(|_| malformed())?,
+        screen.parse().map_err(|_| malformed())?,
+    );
+
+    Ok(ParsedDisplay {
+        host: String::new(), // vsock uses the local host
+        protocol: Some("vsock".to_string()),
+        display,
+        screen,
+    })
 }
 
 #[cfg(test)]
